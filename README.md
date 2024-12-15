@@ -45,3 +45,10 @@ When using this code, it is important to consider the following points:
 - Do not use for exploitation or attack: Do not use this code for gaining unauthorized access to systems or conducting attacks. Only use it for legitimate and ethical purposes.
 
 By observing the legal and appropriate usage of this code, it can be used for security testing, debugging, or system administration purposes, among others.
+
+## Compiling the Code on Windows
+
+```bat
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat"
+cl /DUNICODE /D_UNICODE /EHsc TokenElevation.cpp /link advapi32.lib
+```
