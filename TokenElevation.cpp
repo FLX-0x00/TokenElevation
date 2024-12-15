@@ -6,7 +6,7 @@ BOOL EnablePrivilege(HANDLE hToken, LPCWSTR privilege) {
     LUID luid;
 
     if (!LookupPrivilegeValueW(NULL, privilege, &luid)) {
-        std::cerr << "[-] LookupPrivilegeValue failed. Error: " << GetLastError() << "\n";
+        std::cout << "[-] LookupPrivilegeValue failed. Error: " << GetLastError() << "\n";
         return FALSE;
     }
 
@@ -15,7 +15,7 @@ BOOL EnablePrivilege(HANDLE hToken, LPCWSTR privilege) {
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
     if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
-        std::cerr << "[-] AdjustTokenPrivileges failed. Error: " << GetLastError() << "\n";
+        std::cout << "[-] AdjustTokenPrivileges failed. Error: " << GetLastError() << "\n";
         return FALSE;
     }
 
@@ -24,7 +24,7 @@ BOOL EnablePrivilege(HANDLE hToken, LPCWSTR privilege) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <Source PID> [Program Path] [Arguments]\n";
+        std::cout << "Usage: " << argv[0] << " <Source PID> [Program Path] [Arguments]\n";
         return 1;
     }
 
@@ -51,13 +51,13 @@ int main(int argc, char** argv) {
     // Open the current process token to enable SeDebugPrivilege
     HANDLE hCurrentProcessToken;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hCurrentProcessToken)) {
-        std::cerr << "[-] OpenProcessToken failed. Error: " << GetLastError() << "\n";
+        std::cout << "[-] OpenProcessToken failed. Error: " << GetLastError() << "\n";
         return 1;
     }
 
     // Enable SeDebugPrivilege
     if (!EnablePrivilege(hCurrentProcessToken, L"SeDebugPrivilege")) {
-        std::cerr << "[-] Failed to enable SeDebugPrivilege.\n";
+        std::cout << "[-] Failed to enable SeDebugPrivilege.\n";
         return 1;
     }
     std::cout << "[+] SeDebugPrivilege enabled.\n";
@@ -65,21 +65,21 @@ int main(int argc, char** argv) {
     // Open the source process
     HANDLE hSourceProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, sourcePid);
     if (!hSourceProcess) {
-        std::cerr << "[-] OpenProcess (Source) failed. Error: " << GetLastError() << "\n";
+        std::cout << "[-] OpenProcess (Source) failed. Error: " << GetLastError() << "\n";
         return 1;
     }
 
     // Open the token of the source process
     HANDLE hSourceToken;
     if (!OpenProcessToken(hSourceProcess, TOKEN_DUPLICATE | TOKEN_QUERY, &hSourceToken)) {
-        std::cerr << "[-] OpenProcessToken (Source) failed. Error: " << GetLastError() << "\n";
+        std::cout << "[-] OpenProcessToken (Source) failed. Error: " << GetLastError() << "\n";
         return 1;
     }
 
     // Duplicate the token
     HANDLE hDuplicateToken;
     if (!DuplicateTokenEx(hSourceToken, MAXIMUM_ALLOWED, NULL, SecurityImpersonation, TokenPrimary, &hDuplicateToken)) {
-        std::cerr << "[-] DuplicateTokenEx failed. Error: " << GetLastError() << "\n";
+        std::cout << "[-] DuplicateTokenEx failed. Error: " << GetLastError() << "\n";
         return 1;
     }
     std::cout << "[+] Token duplicated successfully!\n";
@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
             &si,
             &pi))
     {
-        std::cerr << "[-] CreateProcessWithTokenW failed. Error: " << GetLastError() << "\n";
+        std::cout << "[-] CreateProcessWithTokenW failed. Error: " << GetLastError() << "\n";
         return 1;
     }
 
