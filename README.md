@@ -11,7 +11,10 @@ Tested on: Windows 10 and Windows 11
 
 Don't forget to Run as Administrator cmd or powershell
 
-Usage: ```TokenElevation.exe <target_PID>```
+Usage: ```TokenElevation.exe <target_PID> <command> <arguments>```
+Example: ```TokenElevation.exe 1234 "cmd.exe" "/c whoami"```
+
+The command and arguments are optional. If not provided, the code will spawn a new process with the default command "cmd.exe".
 
 ![image](https://github.com/termanix/TokenElevation/assets/50464194/e822eee9-9325-44d5-a7fb-e3e08d14d218)
 
@@ -22,7 +25,8 @@ The main steps of the code are as follows:
 - Open the token of the target process identified by the specified PID.
 - Impersonate the logged-on user with the target process token.
 - Duplicate the token to create a new token with the same privileges.
-- Create a new process using the duplicated token, in this case, launching the "cmd.exe" command.
+- Create a new process using the duplicated token, by default, launching the "cmd.exe" command.
+- When using the second and the third arguments, the code will create a new process with the specified command and arguments.
 - Close the handles to release system resources.
 
 By executing this code, you can elevate privileges and spawn a new process under the context of a target process, 
