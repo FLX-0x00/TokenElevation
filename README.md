@@ -1,4 +1,4 @@
-# Token Elevation
+# Token Elevation (modified by FLX)
 
 This code enables the SeImpersonatePrivilege, which allows the program to impersonate a logged-on user. 
 It then opens the token of a target process specified by its PID and duplicates the token. 
